@@ -25,6 +25,8 @@ CEdit *s_pEditLog = NULL;
 // ============================================================================
 // ==============================================================================
 
+bool InitReplaceTable(void);
+
 std::string WChar2Ansi(LPCWSTR pwszSrc)
 {
 	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -321,6 +323,7 @@ void CnxkyzIndexHelperDlg::DoDataExchange(CDataExchange *pDX)
 {
 	CDialog::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_EDT_LOGINFO, m_edtLogInfo);
+	DDX_Control(pDX, IDC_EDT_JOKE, m_edtJoke);
 }
 
 BEGIN_MESSAGE_MAP(CnxkyzIndexHelperDlg, CDialog)
@@ -345,6 +348,9 @@ BEGIN_MESSAGE_MAP(CnxkyzIndexHelperDlg, CDialog)
 	ON_BN_CLICKED
 (IDC_MAIN_BTN_MERGE_SIMPLE, &CnxkyzIndexHelperDlg::OnBnClickedMainBtnMergeSimple)
 	ON_WM_DESTROY()
+	ON_BN_CLICKED(IDC_BUTTON_GET, &CnxkyzIndexHelperDlg::OnBnClickedButtonGet)
+	ON_BN_CLICKED(IDC_BUTTON_PRE, &CnxkyzIndexHelperDlg::OnBnClickedButtonPre)
+	ON_BN_CLICKED(IDC_BUTTON_NEXT, &CnxkyzIndexHelperDlg::OnBnClickedButtonNext)
 END_MESSAGE_MAP()
 
 // ============================================================================
@@ -384,6 +390,8 @@ BOOL CnxkyzIndexHelperDlg::OnInitDialog()
 	s_pEditLog = &m_edtLogInfo;
 
 	OleInitialize(NULL);
+
+	InitReplaceTable();
 
 	// TODO: 在此添加额外的初始化代码
 	return TRUE;				// 除非将焦点设置到控件，否则返回 TRUE
@@ -727,6 +735,8 @@ bool InitReplaceTable(void)
 		if (cstr == _T("")) {
 			continue;
 		}
+
+		cstr.Replace("\\n", "\n");
 
 		//~~~~~~~~~~~~~~~~~~~~~
 		char szSrc[s_nMaxBufLen];
@@ -1319,7 +1329,8 @@ bool GetHtmlData(const char *pszUrl, std::vector<std::string> &vecStringData)
 	LogInfoIn("连接成功，读取中...");
 
 	while (myHttpFile->ReadString(myData)) {
-		vecStringData.push_back(Big2GB(myData.GetBuffer(0)));
+		vecStringData.push_back(myData.GetBuffer(0));
+//		vecStringData.push_back(Big2GB(myData.GetBuffer(0)));
 	}
 
 	LogInfoIn("读取完成");
@@ -2101,4 +2112,153 @@ void CnxkyzIndexHelperDlg::OnDestroy()
 {
 	CDialog::OnDestroy();
 	CoUninitialize();
+}
+
+
+int ConvUtf8ToAnsi(CString& strSource, CString& strChAnsi)
+{  
+	if (strSource.GetLength() <= 0)
+		return 0;
+
+	CString strWChUnicode;
+
+	strSource.TrimLeft();
+	strSource.TrimRight();   
+	strChAnsi.Empty();
+
+	int iLenByWChNeed = MultiByteToWideChar(CP_UTF8, 0,
+		strSource.GetBuffer(0),
+		strSource.GetLength(), //MultiByteToWideChar
+		NULL, 0);
+
+	int iLenByWchDone = MultiByteToWideChar(CP_UTF8, 0,
+		strSource.GetBuffer(0),
+		strSource.GetLength(),
+		(LPWSTR)strWChUnicode.GetBuffer(iLenByWChNeed * 2),
+		iLenByWChNeed); //MultiByteToWideChar
+
+	strWChUnicode.ReleaseBuffer(iLenByWchDone * 2);
+
+	int iLenByChNeed  = WideCharToMultiByte(CP_ACP, 0,
+		(LPCWSTR)strWChUnicode.GetBuffer(0),
+		iLenByWchDone,
+		NULL, 0,
+		NULL, NULL); 
+
+	int iLenByChDone  = WideCharToMultiByte(CP_ACP, 0,
+		(LPCWSTR)strWChUnicode.GetBuffer(0),
+		iLenByWchDone,
+		strChAnsi.GetBuffer(iLenByChNeed),
+		iLenByChNeed,
+		NULL, NULL);
+
+	strChAnsi.ReleaseBuffer(iLenByChDone);
+
+	if (iLenByWChNeed != iLenByWchDone || iLenByChNeed != iLenByChDone)
+		return 1;
+
+	return 0;   
+}
+
+void ConvertUTF8ToANSI(char* strUTF8,CString &strANSI) //   
+{   
+	int nLen = ::MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,(LPCTSTR)strUTF8,-1,NULL,0); 
+	//返回需要的unicode长度   
+	WCHAR * wszANSI = new WCHAR[nLen+1];   
+	memset(wszANSI, 0, nLen * 2 + 2);   
+	nLen = MultiByteToWideChar(CP_UTF8, 0, (LPCTSTR)strUTF8, -1, wszANSI, nLen);    //把utf8转成unicode  
+
+	nLen = WideCharToMultiByte(CP_ACP, 0, wszANSI, -1, NULL, 0, NULL, NULL);        //得到要的ansi长度   
+	char *szANSI=new char[nLen + 1];   
+	memset(szANSI, 0, nLen + 1);   
+	WideCharToMultiByte (CP_ACP, 0, wszANSI, -1, szANSI, nLen, NULL,NULL);          //把unicode转成ansi   
+	strANSI = szANSI;   
+	delete wszANSI;   
+	delete szANSI;   
+}
+
+std::vector<std::string> s_vecJoke;
+int s_nJokeIndex = 0;
+
+void CnxkyzIndexHelperDlg::OnBnClickedButtonGet()
+{
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~
+	char szTmp[_MAX_PATH] = { 0 };
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	GetPrivateProfileString("MXhaha", "url", "", szTmp, sizeof(szTmp),
+		s_pszConfigFile);
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	std::vector<std::string> vecHahaPageData;
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	if (!GetHtmlData(szTmp, vecHahaPageData)) {
+		return;
+	}
+
+	LogInfoIn("下载完成");
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	char szExpression[s_nMaxBufLen] = { 0 };
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	GetPrivateProfileString("MXhaha", "DataExp", "",
+		szExpression, sizeof(szExpression), s_pszConfigFile);
+
+	boost::regex expression(szExpression);
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	boost::cmatch what;
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	s_vecJoke.clear();
+
+	std::vector < std::string >::const_iterator itLine(vecHahaPageData.begin());
+	for (; itLine != vecHahaPageData.end(); ++itLine) {
+
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~
+		std::string strLine = *itLine;
+		//~~~~~~~~~~~~~~~~~~~~~~~~~~	
+
+		if (boost::regex_match(strLine.c_str(), what, expression)) {
+			CString cstrUTF8 = what[3].str().c_str();
+			CString cstrANSI;
+			ConvUtf8ToAnsi(cstrUTF8, cstrANSI);
+			std::string strData = cstrANSI;
+			ReplaceOne(strData);
+
+			s_vecJoke.push_back(strData);
+
+			LogInfoIn(strData.c_str());
+
+// 			sscanf(what[nTotalTitleNumIndex].str().c_str(), "%d", &nTitleTotal);
+// 			sscanf(what[nPageNumIndex].str().c_str(), "%d", &nPageNum);
+// 			sscanf(what[nTitlePerPageIndex].str().c_str(), "%d", &nTitlePerPage);
+		}
+	}
+
+	this->OnBnClickedButtonPre();
+}
+
+void CnxkyzIndexHelperDlg::OnBnClickedButtonPre()
+{
+	--s_nJokeIndex;
+	if  (s_nJokeIndex < 0) {
+		s_nJokeIndex = 0;
+	}
+
+	m_edtJoke.SetWindowText(s_vecJoke.at(s_nJokeIndex).c_str());
+	m_edtJoke.UpdateWindow();
+}
+
+void CnxkyzIndexHelperDlg::OnBnClickedButtonNext()
+{
+	++s_nJokeIndex;
+	if (s_nJokeIndex >= s_vecJoke.size()) {
+		s_nJokeIndex = s_vecJoke.size() - 1;
+	}
+
+	m_edtJoke.SetWindowText(s_vecJoke.at(s_nJokeIndex).c_str());
+	m_edtJoke.UpdateWindow();
 }

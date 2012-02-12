@@ -37,4 +37,8 @@ public:
 	afx_msg void OnBnClickedMainBtnDownloadTitleUrl();
 	afx_msg void OnBnClickedMainBtnMergeSimple();
 	afx_msg void OnDestroy();
+	afx_msg void OnBnClickedButtonGet();
+	CEdit m_edtJoke;
+	afx_msg void OnBnClickedButtonPre();
+	afx_msg void OnBnClickedButtonNext();
 };
